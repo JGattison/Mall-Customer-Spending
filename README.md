@@ -94,7 +94,7 @@ ggplot(data, aes(Age, Annual.Income, color = cluster_id, alpha = Gender)) +
 
 ## Data Sources
 
-This project uses **dummy data** representing mall customer demographics and spending scores. The dataset is fictional and intended for educational purposes.
+This project uses **dummy data** representing mall customer demographics and spending scores. The dataset is fictional and intended for educational purposes. It can be found here: https://www.kaggle.com/datasets/vjchoudhary7/customer-segmentation-tutorial-in-python
 
 ---
 
