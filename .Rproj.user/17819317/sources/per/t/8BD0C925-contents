@@ -1,0 +1,206 @@
+library(readxl)
+library(DataExplorer)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(caret)
+library(Boruta)
+library(cvms)
+library(ggplot2)
+
+
+# Load data
+data <- read.csv('Mall_Customers.csv')
+
+# Define Gender as Factor
+data$Gender <- as.factor(data$Gender)
+
+# Explore data distribution
+# Histogram for Age
+ggplot(data, aes(x = Age)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "skyblue") +
+  labs(title = "Age Distribution", x = "Age", y = "Count") +
+  theme_minimal()
+
+# Histogram for Annual Income
+ggplot(data, aes(x = Annual.Income)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "lightgreen") +
+  labs(title = "Annual Income Distribution", x = "Annual Income ($)", y = "Count") +
+  theme_minimal()
+
+# Histogram for Spending Score
+ggplot(data, aes(x = Spending.Score)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "orange") +
+  labs(title = "Spending Score Distribution", x = "Spending Score", y = "Count") +
+  theme_minimal()
+
+
+prop.table(table(data$Gender))
+
+# Bar Plot for Gender
+ggplot(data, aes(x = Gender)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), fill = "purple") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Gender Proportion", x = "Gender", y = "Percentage") +
+  theme_minimal()
+
+# Explore data relationships
+# Scatter Plot: Age vs. Annual Income
+ggplot(data, aes(x = Age, y = Annual.Income)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  labs(title = "Age vs. Annual Income", x = "Age", y = "Annual Income ($)") +
+  theme_minimal()
+
+# Scatter Plot: Age vs. Spending Score
+ggplot(data, aes(x = Age, y = Spending.Score)) +
+  geom_point(color = "red", alpha = 0.7) +
+  labs(title = "Age vs. Spending Score", x = "Age", y = "Spending Score") +
+  theme_minimal()
+
+# Scatter Plot: Annual Income vs. Spending Score
+ggplot(data, aes(x = Annual.Income, y = Spending.Score)) +
+  geom_point(color = "green", alpha = 0.7) +
+  labs(title = "Annual Income vs. Spending Score", x = "Annual Income ($)", y = "Spending Score") +
+  theme_minimal()
+
+# Boxplot: Age by Gender
+ggplot(data, aes(x = Gender, y = Age)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Age Distribution by Gender", x = "Gender", y = "Age") +
+  theme_minimal()
+
+# Boxplot: Annual Income by Gender
+ggplot(data, aes(x = Gender, y = Annual.Income)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Annual Income Distribution by Gender", x = "Gender", y = "Annual Income ($)") +
+  theme_minimal()
+
+# Boxplot: Spending Score by Gender
+ggplot(data, aes(x = Gender, y = Spending.Score)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Spending Score Distribution by Gender", x = "Gender", y = "Spending Score") +
+  theme_minimal()
+
+create_report(data[,-1])
+
+####################### SPENDING SCORE DECISION TREE #######################
+
+# Splitting the dataset into the Training set and Test set
+# install.packages('caTools')
+set.seed(123)
+split = sample.split(data$Spending.Score, SplitRatio = 0.75)
+training_set = subset(data, split == TRUE)
+test_set = subset(data, split == FALSE)
+
+# Fitting Kernel SVM to the Training set
+# Create your classifier here
+model <- rpart(Spending.Score ~ Gender + Age + Annual.Income, data = training_set, method = 'anova')
+
+rpart.plot(model)
+
+# Print and visualize the tree to check for overused variables
+printcp(model)
+plotcp(model)
+
+# Prune the tree based on complexity parameter (cp)
+pruned_tree <- prune(model, cp = 0.019162)
+
+rpart.plot(pruned_tree)
+
+# Visualize predictive power
+importances <- varImp(pruned_tree) 
+
+importances %>%
+  arrange(desc(Overall))
+
+# Predict with test dataset
+preds <- predict(pruned_tree, newdata = test_set, type = "vector")
+preds
+
+# Mean Squared Error
+mse <- mean((test_set$Spending.Score - preds)^2)
+print(mse)
+
+# Mean Absolute Difference
+mae <- mean(abs(test_set$Spending.Score - preds))
+print(mae)
+
+# R-Squared
+rss <- sum((test_set$Spending.Score - preds)^2)
+tss <- sum((test_set$Spending.Score - mean(test_set$Spending.Score))^2)
+r_squared <- 1 - (rss/tss)
+print(r_squared)
+
+# Root Mean Squared Error
+rmse <- sqrt(mse)
+rmse
+
+summary(data$Spending.Score)
+sqrt(var(data$Spending.Score))
+
+
+####################### CLUSTERING OF CUSTOMERS #########################
+
+# Standardize data
+data[, c("Age2", "Annual.Income2")] = scale(data[, c("Age", "Annual.Income")])
+
+# Get the two columns of interest
+data_2cols <- data[, c("Age2", "Annual.Income2")]
+
+# Define max number of cluster
+n_clusters <- 10
+
+# Initialize total within sum of squares error: wss
+wss <- numeric(n_clusters)
+
+set.seed(123)
+
+# Look over 1 to n possible clusters
+for (i in 1:n_clusters) {
+  # Fit the model: km.out
+  km.out <- kmeans(data_2cols, centers = i, nstart = 20)
+  # Save the within cluster sum of squares
+  wss[i] <- km.out$tot.withinss
+}
+
+# Produce a scree plot
+wss_df <- tibble(clusters = 1:n_clusters, wss = wss)
+
+scree_plot <- ggplot(wss_df, aes(x = clusters, y = wss, group = 1)) +
+  geom_point(size = 4)+
+  geom_line() +
+  scale_x_continuous(breaks = c(2, 4, 6, 8, 10)) +
+  xlab('Number of clusters') +
+  geom_hline(
+    yintercept = wss, 
+    linetype = 'dashed', 
+    col = c(rep('#000000',2),'#FF0000', rep('#000000', 7))
+  )
+scree_plot
+
+# Define final model
+km.out <- kmeans(data_2cols, centers = 3, nstart = 20)
+km.out
+
+# Visualize clusters
+data$cluster_id <- factor(km.out$cluster)
+ggplot(data, aes(Age, Annual.Income, color = cluster_id, alpha = Gender)) +
+  geom_point(size = 2) +
+  xlab("Age") +
+  ylab("Annual Income ($ in thousands)") +
+  scale_alpha_manual(values = c(0.3, 0.9))
+
+# ggplot(data, aes(x = Age, y = Annual.Income, color = interaction(cluster_id, Gender))) +
+#   geom_point(alpha = 0.8) +
+#   xlab("Age") +
+#   ylab("Annual Income ($ in thousands)") +
+#   scale_color_manual(values = c(
+#     "1.Male" = "#FF9999",    # Light red for cluster 1 males
+#     "1.Female" = "#FF0000",  # Darker red for cluster 1 females
+#     "2.Male" = "#9999FF",    # Light blue for cluster 2 males
+#     "2.Female" = "#0000FF",  # Darker blue for cluster 2 females
+#     "3.Male" = "#99FF99",    # Light green for cluster 3 males
+#     "3.Female" = "#00FF00"   # Darker green for cluster 3 females
+#   )) +
+#   labs(color = "Cluster and Gender")

@@ -1,0 +1,255 @@
+---
+title: "Mall Customer Spending Analysis"
+author: "Jose Gattison"
+output: html_document
+---
+
+## Overview
+
+This analysis explores mall customer spending behavior, using variables such as age, gender, and annual income to uncover insights that can guide business strategies. By examining customer demographics and income patterns, we aim to improve targeted marketing, product segmentation, and customer engagement strategies. 
+
+This is a hypothetical analysis of mall customer data, but it demonstrates how similar data could be used to optimize mall sales performance and customer satisfaction.
+
+---
+
+## 1. Data Loading and Preprocessing
+
+```{r}
+# Load required libraries
+library(readxl)
+library(DataExplorer)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(caret)
+library(Boruta)
+library(cvms)
+library(ggplot2)
+
+# Load data
+data <- read.csv('Mall_Customers.csv')
+
+# Convert Gender to Factor
+data$Gender <- as.factor(data$Gender)
+```
+
+## 2. Exploratory Data Analysis (EDA)
+
+### 2.1 Age Distribution
+
+```{r}
+# Age Distribution Plot
+ggplot(data, aes(x = Age)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "skyblue") +
+  labs(title = "Age Distribution", x = "Age", y = "Count") +
+  theme_minimal()
+```
+
+### 2.2 Annual Income Distribution
+
+```{r}
+# Annual Income Distribution Plot
+ggplot(data, aes(x = Annual.Income)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "lightgreen") +
+  labs(title = "Annual Income Distribution", x = "Annual Income ($)", y = "Count") +
+  theme_minimal()
+```
+
+### 2.3 Spending Score Distribution
+
+```{r}
+ggplot(data, aes(x = Spending.Score)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "orange") +
+  labs(title = "Spending Score Distribution", x = "Spending Score", y = "Count") +
+  theme_minimal()
+```
+
+### 2.4 Gender Distribution
+
+```{r}
+ggplot(data, aes(x = Gender)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), fill = "purple") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Gender Proportion", x = "Gender", y = "Percentage") +
+  theme_minimal()
+
+prop.table(table(data$Gender))
+```
+
+## 3. Data Relationships
+
+### 3.1 Age vs Annual Income
+
+```{r}
+ggplot(data, aes(x = Age, y = Annual.Income)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  labs(title = "Age vs. Annual Income", x = "Age", y = "Annual Income ($)") +
+  theme_minimal()
+```
+
+### 3.2 Age vs Spending Score
+
+```{r}
+ggplot(data, aes(x = Age, y = Spending.Score)) +
+  geom_point(color = "red", alpha = 0.7) +
+  labs(title = "Age vs. Spending Score", x = "Age", y = "Spending Score") +
+  theme_minimal()
+```
+
+### 3.3 Annual Income vs Spending Score
+
+```{r}
+ggplot(data, aes(x = Annual.Income, y = Spending.Score)) +
+  geom_point(color = "green", alpha = 0.7) +
+  labs(title = "Annual Income vs. Spending Score", x = "Annual Income ($)", y = "Spending Score") +
+  theme_minimal()
+```
+
+### 3.4 Age by Gender
+
+```{r}
+ggplot(data, aes(x = Gender, y = Age)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Age Distribution by Gender", x = "Gender", y = "Age") +
+  theme_minimal()
+```
+
+### 3.5 Annual Income by Gender
+
+```{r}
+ggplot(data, aes(x = Gender, y = Annual.Income)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Annual Income Distribution by Gender", x = "Gender", y = "Annual Income ($)") +
+  theme_minimal()
+```
+
+### 3.6 Spending Score by Gender
+
+```{r}
+ggplot(data, aes(x = Gender, y = Spending.Score)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Spending Score Distribution by Gender", x = "Gender", y = "Spending Score") +
+  theme_minimal()
+```
+
+## 4. Decision Tree Analysis: Predicting Spending Behavior
+
+### 4.1 Decision Tree for Spending Score Prediction
+
+```{r}
+# Splitting the dataset into the Training set and Test set
+# install.packages('caTools')
+set.seed(123)
+split = sample.split(data$Spending.Score, SplitRatio = 0.75)
+training_set = subset(data, split == TRUE)
+test_set = subset(data, split == FALSE)
+
+# Fitting Kernel SVM to the Training set
+model <- rpart(Spending.Score ~ Gender + Age + Annual.Income, data = training_set, method = 'anova')
+
+rpart.plot(model)
+
+# Print and visualize the tree to check for overused variables
+printcp(model)
+plotcp(model)
+
+# Prune the tree based on complexity parameter (cp)
+pruned_tree <- prune(model, cp = 0.019162)
+
+rpart.plot(pruned_tree)
+```
+
+#### Key Insights:
+
+##### Age 41 as a Critical Threshold: 
+Customers over the age of 41 represent a distinct group in terms of spending behavior. This highlights the opportunity for the mall to target older customers with high-end, brand-specific products, while younger customers might be more responsive to trend-based promotions. Tailoring promotions based on age could maximize engagement for different customer groups, leading to higher sales.
+
+##### High-Income Customers Over $69K: 
+Customers with incomes over $69K are consistently high spenders, independent of age. Offering premium experiences, VIP access, or luxury product offerings could engage these high-spending customers and increase revenue.
+
+##### Younger, Low-Income Customers: 
+Young customers with annual incomes below $36K represent a more price-sensitive group. Focus on promotions and affordable options to appeal to this group, ensuring they feel valued despite lower spending power. This could drive traffic and loyalty over time.
+
+### 4.2 Model Evaluation
+
+```{r}
+# Evaluation
+preds <- predict(pruned_tree, newdata = test_set, type = "vector")
+mse <- mean((test_set$Spending.Score - preds)^2)
+mae <- mean(abs(test_set$Spending.Score - preds))
+rss <- sum((test_set$Spending.Score - preds)^2)
+tss <- sum((test_set$Spending.Score - mean(test_set$Spending.Score))^2)
+r_squared <- 1 - (rss/tss)
+rmse <- sqrt(mse)
+
+# Display results
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Mean Absolute Error (MAE):", mae, "\n")
+cat("R-Squared:", r_squared, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse, "\n")
+```
+
+## 5. Clustering Analysis: Customer Segmentation
+
+```{r}
+# Standardizing Data
+data[, c("Age2", "Annual.Income2")] <- scale(data[, c("Age", "Annual.Income")])
+
+# Elbow Method to Find Optimal Number of Clusters
+n_clusters <- 10
+wss <- numeric(n_clusters)
+for (i in 1:n_clusters) {
+  km.out <- kmeans(data[, c("Age2", "Annual.Income2")], centers = i, nstart = 20)
+  wss[i] <- km.out$tot.withinss
+}
+
+# Plot Elbow Curve
+ggplot(data.frame(clusters = 1:n_clusters, wss = wss), aes(x = clusters, y = wss)) +
+  geom_point(size = 4) +
+  geom_line() +
+  labs(title = "Elbow Method for Optimal Clusters", x = "Number of Clusters", y = "Within-Cluster Sum of Squares")
+```
+
+### Final Cluster Assignment
+
+```{r}
+# Final clustering with 3 clusters
+km.out <- kmeans(data[, c("Age2", "Annual.Income2")], centers = 3, nstart = 20)
+data$cluster_id <- factor(km.out$cluster)
+
+# Visualize Clusters
+ggplot(data, aes(Age, Annual.Income, color = cluster_id, alpha = Gender)) +
+  geom_point(size = 2) +
+  labs(title = "Customer Segments by Age and Annual Income", x = "Age", y = "Annual Income ($ in thousands)") +
+  scale_alpha_manual(values = c(0.3, 0.9))
+```
+
+#### Key Insights:
+
+##### Cluster 1 (Red): 
+Younger individuals with higher incomes are likely interested in premium, trendy products. These customers can be targeted with exclusive, fashion-forward items.
+
+##### Cluster 2 (Green): 
+Younger, lower-income individuals likely respond to budget-conscious promotions. Affordable product lines and frequent discounts can capture more sales from this group.
+
+##### Cluster 3 (Blue): 
+Older individuals with lower incomes likely prioritize value-for-money or essential goods. Offering loyalty programs or discounts could encourage more frequent purchases from this segment.
+
+
+## Conclusion
+
+The decision tree and clustering analyses reveal several key insights about mall customer behavior that can be directly applied to improve business outcomes:
+
+- **Older, High-Income Shoppers**: The decision tree highlights that customers over 41 with higher incomes are prime candidates for premium product offerings and exclusive promotions. Targeting these customers with luxury goods and personalized services could significantly increase average transaction values.
+  
+- **Younger, Price-Sensitive Shoppers**: On the other hand, younger customers with lower incomes exhibit more price sensitivity, making them ideal targets for promotions, discounts, and trend-based products. Engaging this group with more frequent sales and affordable, trendy merchandise can help maintain their loyalty and drive consistent traffic to the mall.
+
+- **Distinct Customer Segments**: The clustering analysis further supports these insights, showing three distinct customer segments:
+    - **Cluster 1**: Young, high-income customers, who may be more responsive to exclusive, trend-forward items and premium experiences.
+    - **Cluster 2**: Young, lower-income customers who are more price-conscious, making them ideal candidates for promotions and budget-friendly offerings.
+    - **Cluster 3**: Older, lower-income customers who likely value practicality and loyalty programs, as they tend to prioritize value-for-money purchases.
+
+These insights highlight the importance of **segment-based marketing strategies**. By offering tailored experiences—luxury items for high spenders, trendy promotions for younger customers, and loyalty programs for practical shoppers—the mall can maximize its customer engagement and revenue potential across different demographic groups.
+
+By understanding the demographics and behaviors of the customer base, the mall can implement targeted marketing, optimize product placement, and create promotions that resonate with distinct customer segments, driving both short-term sales and long-term loyalty.
